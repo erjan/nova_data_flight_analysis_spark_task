@@ -1,0 +1,191 @@
+
+
+x-airflow-common:
+  &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: custom-airflow-spark:latest
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-airflow/airflow
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    _PIP_ADDITIONAL_REQUIREMENTS: ''
+    SPARK_HOME: '/opt/spark'
+    JAVA_HOME: '/usr/lib/jvm/java-17-openjdk-amd64'
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+    - ./data:/opt/airflow/data
+    - jdbc-driver:/opt/airflow/jdbc
+    - spark-home:/opt/spark
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    &airflow-common-depends-on
+    postgres-airflow:
+      condition: service_healthy
+    jdbc-downloader:
+      condition: service_completed_successfully
+    spark-downloader:
+      condition: service_completed_successfully
+
+services:
+  # Download Apache Spark
+  spark-downloader:
+    image: alpine:latest
+    command: >
+      sh -c "
+      if [ ! -d /spark/bin ]; then
+        echo 'Installing dependencies...';
+        apk add --no-cache wget tar bash openjdk17-jre;
+        echo 'Downloading Apache Spark 3.5.0...';
+        cd /tmp;
+        wget -q https://archive.apache.org/dist/spark/spark-3.5.0/spark-3.5.0-bin-hadoop3.tgz;
+        echo 'Extracting Spark...';
+        tar -xzf spark-3.5.0-bin-hadoop3.tgz;
+        mv spark-3.5.0-bin-hadoop3/* /spark/;
+        rm -rf /tmp/spark-3.5.0-bin-hadoop3.tgz;
+        chmod -R 755 /spark;
+        echo 'Spark installed successfully';
+      else
+        echo 'Spark already installed';
+      fi
+      "
+    volumes:
+      - spark-home:/spark
+
+  # Download PostgreSQL JDBC driver automatically
+  jdbc-downloader:
+    image: alpine:latest
+    command: >
+      sh -c "
+      if [ ! -f /jdbc/postgresql-42.6.0.jar ]; then
+        echo 'Downloading PostgreSQL JDBC driver...';
+        wget -O /jdbc/postgresql-42.6.0.jar https://jdbc.postgresql.org/download/postgresql-42.6.0.jar;
+        echo 'JDBC driver downloaded successfully';
+      else
+        echo 'JDBC driver already exists';
+      fi
+      "
+    volumes:
+      - jdbc-driver:/jdbc
+
+  postgres-airflow:
+    image: postgres:14
+    container_name: postgres-airflow
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-airflow-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+    ports:
+      - "5433:5432"
+
+  postgres-data:
+    image: postgres:14
+    container_name: postgres-data
+    environment:
+      POSTGRES_USER: datauser
+      POSTGRES_PASSWORD: datapass
+      POSTGRES_DB: flightsdb
+    volumes:
+      - postgres-data-db-volume:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "datauser"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+    ports:
+      - "5434:5432"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /sources/logs /sources/dags /sources/plugins /sources/data
+        chown -R "${AIRFLOW_UID:-50000}:0" /sources/{logs,dags,plugins,data}
+        exec /entrypoint airflow version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_UPGRADE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+      _PIP_ADDITIONAL_REQUIREMENTS: ''
+    user: "0:0"
+    volumes:
+      - ./:/sources
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+      jdbc-downloader:
+        condition: service_completed_successfully
+      spark-downloader:
+        condition: service_completed_successfully
+
+  airflow-cli:
+    <<: *airflow-common
+    profiles:
+      - debug
+    environment:
+      <<: *airflow-common-env
+      CONNECTION_CHECK_MAX_COUNT: "0"
+    command:
+      - bash
+      - -c
+      - airflow
+
+volumes:
+  postgres-airflow-db-volume:
+  postgres-data-db-volume:
+  jdbc-driver:
+  spark-home:
