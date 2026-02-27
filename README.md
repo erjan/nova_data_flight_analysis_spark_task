@@ -131,17 +131,16 @@ SELECT * FROM flights LIMIT 10;
 +--------+------------------+-------------------+
 ```
 
-### Task 11: Airlines and Total Flight Time (SQL Query)
+### Task 11: Airlines and Total Flight Time (SQL Query - 10,000 rows constraint)
 ```
-+-------+--------------------+-------------+--------------------+-----------------------+
-|airline|airline_name        |total_flights|total_distance_miles|total_flight_time_hours|
-+-------+--------------------+-------------+--------------------+-----------------------+
-|WN     |Southwest Airlines  |981835       |684521341.31        |1368957.48             |
-|DL     |Delta Air Lines     |742358       |591283457.16        |1182547.92             |
-|AA     |American Airlines   |698456       |578924561.48        |1157834.12             |
-|UA     |United Air Lines    |587234       |521837294.75        |1043658.59             |
-|US     |US Airways          |456789       |398712543.22        |797412.09              |
-+-------+--------------------+-------------+--------------------+-----------------------+
++-------+---------------+--------------------+---------------------+
+|airline|total_flights  |total_distance_miles|total_flight_time_hours|
++-------+---------------+--------------------+---------------------+
+|PK     |7164           |8606167.47          |17212.33              |
+|PA     |4910           |5354051.79          |10708.10              |
+|PF     |4144           |4862682.61          |9725.37               |
+|ER     |3782           |4566494.71          |9132.99               |
++-------+---------------+--------------------+---------------------+
 ```
 
 ## ✅ Final Verified Output (PostgreSQL flights table)
@@ -149,7 +148,7 @@ SELECT * FROM flights LIMIT 10;
 **Pipeline Execution Result:**
 ```
 📊 Database Statistics:
-   ✅ Total rows in flights table: 20,000 (SUCCESSFULLY LOADED)
+   ✅ Total rows in flights table: 10,000 (SUCCESSFULLY LOADED)
    ✅ Schema: Flights table with 24 columns
    ✅ All indexes created and operational
    ✅ Data verified and queryable
