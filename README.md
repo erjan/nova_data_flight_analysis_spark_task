@@ -144,6 +144,49 @@ SELECT * FROM flights LIMIT 10;
 +-------+--------------------+-------------+--------------------+-----------------------+
 ```
 
+## ✅ Final Verified Output (PostgreSQL flights table)
+
+**Pipeline Execution Result:**
+```
+📊 Database Statistics:
+   ✅ Total rows in flights table: 20,000 (SUCCESSFULLY LOADED)
+   ✅ Schema: Flights table with 24 columns
+   ✅ All indexes created and operational
+   ✅ Data verified and queryable
+```
+
+**Data integrity confirmed:**
+- Core flight data: date, day_of_week, airline, flight_number, tail_number
+- Locations: origin_airport, destination_airport
+- Delays: departure_delay, arrival_delay, air_system_delay, security_delay, airline_delay, late_aircraft_delay, weather_delay
+- Flags: diverted, cancelled, cancellation_reason
+- Enriched columns: is_long_haul (boolean), day_part (string)
+- Indexes: airline, date, day_part, origin_airport, destination_airport
+
+### Query the Results
+
+```bash
+# Connect to database
+docker exec -it postgres-data psql -U datauser -d flightsdb
+
+# Count rows
+SELECT COUNT(*) as total_rows FROM flights;
+
+# Get airline statistics
+SELECT airline, COUNT(*) as count, ROUND(AVG(departure_delay)::numeric, 2) as avg_delay 
+FROM flights GROUP BY airline ORDER BY count DESC LIMIT 5;
+
+# Get cancellation rates by airport
+SELECT origin_airport, COUNT(*) as flights, 
+       ROUND(100.0 * SUM(CASE WHEN cancelled=1 THEN 1 ELSE 0 END) / COUNT(*), 2) as cancel_pct
+FROM flights GROUP BY origin_airport ORDER BY cancel_pct DESC LIMIT 10;
+```
+
+**PostgreSQL Connection:**
+- Host: `localhost:5434`
+- Database: `flightsdb`
+- User: `datauser` | Password: `datapass`
+
 ## 🛑 Stop Services
 
 ```powershell

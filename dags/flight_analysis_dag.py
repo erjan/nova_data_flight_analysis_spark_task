@@ -61,6 +61,44 @@ def create_spark_session():
     return spark
 
 
+def read_flights(spark):
+    """Read flights data with BOM/encoding handling and cache as Parquet."""
+    parquet_path = f"{DATA_DIR}/flights_parquet"
+
+    # If parquet cache exists, read from it to avoid repeated CSV parsing
+    if os.path.exists(parquet_path):
+        df = spark.read.parquet(parquet_path)
+        print(f"✅ Read flights from parquet: {parquet_path}. Rows: {df.count()}")
+        return df
+
+
+    # Try reading with default/UTF-8 first, then try UTF-16LE if the first fails
+    try:
+        df = spark.read.csv(FLIGHTS_FILE, header=True, inferSchema=True)
+        print(f"✅ CSV flights read (default). Columns: {df.columns}")
+    except Exception as e1:
+        print(f"⚠️ Default CSV read failed: {e1}")
+        try:
+            df = spark.read.option("encoding", "UTF-16LE") \
+                .option("quote", '"') \
+                .option("escape", '"') \
+                .option("multiLine", "true") \
+                .option("mode", "PERMISSIVE") \
+                .option("columnNameOfCorruptRecord", "_corrupt_record") \
+                .csv(FLIGHTS_FILE, header=True, inferSchema=True)
+
+            print(f"✅ CSV flights read (UTF-16LE). Columns: {df.columns}")
+        except Exception as e2:
+            print(f"❌ Both CSV read attempts failed: default error={e1}; utf16 error={e2}")
+            raise
+
+    # Persist cleaned dataframe as parquet for subsequent tasks
+    df.write.mode("overwrite").parquet(parquet_path)
+    print(f"✅ Wrote flights parquet to: {parquet_path}")
+
+    return spark.read.parquet(parquet_path)
+
+
 def task_1_load_data(**context):
     """
     Task 1: Загрузка данных в PySpark DataFrame
@@ -68,8 +106,8 @@ def task_1_load_data(**context):
     """
     spark = create_spark_session()
     
-    # Load flights data
-    df_flights = spark.read.csv(FLIGHTS_FILE, header=True, inferSchema=True)
+    # Load flights data (use helper to handle encoding and caching)
+    df_flights = read_flights(spark)
     
     # Print row count
     row_count = df_flights.count()
@@ -89,7 +127,7 @@ def task_2_verify_data(**context):
     """
     spark = create_spark_session()
     
-    df_flights = spark.read.csv(FLIGHTS_FILE, header=True, inferSchema=True)
+    df_flights = read_flights(spark)
     
     print("Схема данных / Data Schema:")
     df_flights.printSchema()
@@ -121,7 +159,7 @@ def task_3_transform_data(**context):
     """
     spark = create_spark_session()
     
-    df_flights = spark.read.csv(FLIGHTS_FILE, header=True, inferSchema=True)
+    df_flights = read_flights(spark)
     
     # Convert DATE to date type
     df_flights = df_flights.withColumn("DATE", to_date(col("DATE"), "yyyy-MM-dd"))
@@ -151,7 +189,7 @@ def task_4_top_airlines_delay(**context):
     """
     spark = create_spark_session()
     
-    df_flights = spark.read.csv(FLIGHTS_FILE, header=True, inferSchema=True)
+    df_flights = read_flights(spark)
     df_airlines = spark.read.csv(AIRLINES_FILE, header=True, inferSchema=True)
     
     # Calculate average delay (considering both departure and arrival delays)
@@ -188,7 +226,7 @@ def task_5_cancelled_flights_percentage(**context):
     """
     spark = create_spark_session()
     
-    df_flights = spark.read.csv(FLIGHTS_FILE, header=True, inferSchema=True)
+    df_flights = read_flights(spark)
     df_airports = spark.read.csv(AIRPORTS_FILE, header=True, inferSchema=True)
     
     # Calculate cancellation percentage by origin airport
@@ -227,7 +265,7 @@ def task_6_delays_by_time_of_day(**context):
     """
     spark = create_spark_session()
     
-    df_flights = spark.read.csv(FLIGHTS_FILE, header=True, inferSchema=True)
+    df_flights = read_flights(spark)
     
     # Define time of day function
     df_with_time = df_flights.withColumn(
@@ -264,7 +302,7 @@ def task_7_add_new_columns(**context):
     """
     spark = create_spark_session()
     
-    df_flights = spark.read.csv(FLIGHTS_FILE, header=True, inferSchema=True)
+    df_flights = read_flights(spark)
     
     # Add IS_LONG_HAUL column (distance > 1000 miles)
     df_enriched = df_flights.withColumn(
@@ -308,7 +346,7 @@ def task_9_load_to_postgres(**context):
     """
     spark = create_spark_session()
     
-    df_flights = spark.read.csv(FLIGHTS_FILE, header=True, inferSchema=True)
+    df_flights = read_flights(spark)
     
     # Transform and enrich data
     df_enriched = df_flights.withColumn(

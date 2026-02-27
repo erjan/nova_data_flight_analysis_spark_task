@@ -65,6 +65,9 @@ postgres-data/
 # Logs
 *.log
 
+# Feedback files (do not commit)
+feedback*.txt
+
 # Temporary files
 tmp/
 temp/
